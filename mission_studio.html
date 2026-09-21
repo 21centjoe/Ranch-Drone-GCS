@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RanchDrone GCS</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+:root{--bg:#05070a;--panel:#0c1017;--border:#00ffcc;--dim:#7a8b9e;--bad:#ff4444;--warn:#ffaa00;--sim:#ff9d3d;--red:#ff3a3a;}
+*{box-sizing:border-box;}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--border);font-family:'Courier New',monospace;}
+body{display:flex;flex-direction:column;}
+
+/* topbar */
+.topbar{display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid var(--border);flex-wrap:wrap;flex-shrink:0;}
+.brand{font-weight:900;font-size:13px;letter-spacing:.06em;margin-right:6px;}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;}
+.tab{padding:6px 12px;background:#121824;border:1px solid var(--border);color:var(--dim);cursor:pointer;font-family:inherit;font-size:11px;text-transform:uppercase;}
+.tab.active{background:var(--border);color:var(--bg);font-weight:bold;}
+.savechip{margin-left:auto;font-size:10px;color:var(--dim);padding:4px 8px;border:1px solid #1a2233;border-radius:10px;white-space:nowrap;}
+.savechip.ok{color:var(--border);}
+.pill{padding:2px 9px;border-radius:10px;font-size:10px;white-space:nowrap;}
+.pill.live{background:#0a3;color:#fff;}
+.pill.dead{background:#511;color:#f88;}
+
+/* continue banner */
+.continue-banner{background:#0a1a0a;border:1px solid var(--border);padding:8px 14px;display:flex;align-items:center;gap:12px;font-size:12px;flex-shrink:0;}
+.continue-banner b{color:#fff;}
+.continue-banner button{font-family:inherit;font-size:11px;padding:4px 10px;border:1px solid var(--dim);background:transparent;color:var(--dim);cursor:pointer;}
+.continue-banner button:hover{border-color:var(--bad);color:var(--bad);}
+.hidden{display:none!important;}
+
+/* panels */
+.tabpanel{display:none;flex:1;min-height:0;flex-direction:column;}
+.tabpanel.active{display:flex;}
+.scrollable{overflow-y:auto;padding:14px;}
+
+/* map fills its container */
+.mapwrap{position:relative;flex:1;min-height:0;}
+.mapwrap .leaflet-map{position:absolute;inset:0;}
+
+/* float panel over map */
+.fpanel{position:absolute;top:8px;right:8px;width:250px;max-height:calc(100% - 16px);overflow-y:auto;background:rgba(8,11,16,.94);border:1px solid var(--border);padding:10px;z-index:500;font-size:12px;}
+.fpanel h4{margin:0 0 7px;border-bottom:1px dashed var(--border);padding-bottom:4px;font-size:11px;text-transform:uppercase;}
+.fpanel label{display:block;margin:5px 0 2px;color:var(--dim);font-size:11px;}
+.fpanel input,.fpanel select,.fpanel button,.fpanel textarea{width:100%;padding:5px;background:#121824;color:#fff;border:1px solid var(--border);font-family:inherit;font-size:11px;margin-bottom:5px;}
+.fpanel button{background:var(--border);color:var(--bg);font-weight:bold;cursor:pointer;text-transform:uppercase;}
+.fpanel button:hover{background:#00cc99;}
+.fpanel button.bad{background:var(--bad);color:#fff;}
+.fpanel button.sim{background:var(--sim);color:#1a0d00;}
+.fpanel button.tog{background:#121824;color:var(--dim);border-color:var(--dim);}
+.fpanel button.tog.on{background:#002a10;color:var(--border);border-color:var(--border);}
+.simbox{border:1px solid var(--sim);color:var(--sim);padding:6px;font-size:11px;margin-top:4px;}
+
+/* weather panel */
+.wxgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;}
+.wxcard{background:var(--panel);border:1px solid var(--border);padding:8px;}
+.wxcard .lbl{color:var(--dim);font-size:10px;text-transform:uppercase;}
+.wxcard .val{font-size:20px;color:#fff;margin-top:3px;}
+.wxcard .sub{font-size:10px;color:var(--dim);}
+.wind-go{font-size:13px;font-weight:bold;margin:8px 0;padding:6px;text-align:center;}
+.wind-go.go{background:#0a3;color:#fff;}
+.wind-go.nogo{background:var(--bad);color:#fff;}
+
+/* stack layout for non-map tabs */
+.stack{padding:14px;display:flex;flex-direction:column;gap:10px;overflow-y:auto;max-width:900px;}
+.card{background:var(--panel);border:1px solid var(--border);padding:12px;}
+.card h4{margin:0 0 8px;border-bottom:1px dashed var(--border);padding-bottom:5px;font-size:12px;text-transform:uppercase;}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
+.field label{display:block;color:var(--dim);font-size:11px;margin-bottom:3px;}
+.field input,.field select,.field textarea{width:100%;padding:7px;background:#121824;color:#fff;border:1px solid var(--border);font-family:inherit;font-size:12px;}
+.field select option[value="custom"]{color:var(--warn);}
+.btn{width:100%;padding:8px;background:var(--border);color:var(--bg);border:none;font-family:inherit;font-size:12px;font-weight:bold;text-transform:uppercase;cursor:pointer;margin-bottom:6px;}
+.btn:hover{background:#00cc99;}
+.btn.warn{background:var(--warn);color:#000;}
+.btn.bad{background:var(--bad);color:#fff;}
+.statusline{font-size:11px;min-height:14px;margin:2px 0 4px;}
+.statusline.ok{color:var(--border);}
+.statusline.bad{color:var(--bad);}
+
+/* ALT box */
+.altbox{border:1px solid var(--warn);background:rgba(255,170,0,.07);color:#ffd27a;padding:10px;font-size:11px;margin-top:6px;}
+.altbox b{color:var(--warn);display:block;margin-bottom:4px;}
+.altbox ol{margin:3px 0 0 16px;padding:0;}
+.altbox code{background:#000;padding:1px 4px;color:#fff;font-size:10px;}
+
+/* cockpit grid */
+.cockgrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
+.cstat{background:var(--panel);border:1px solid var(--border);padding:10px;}
+.cstat .cl{color:var(--dim);font-size:10px;text-transform:uppercase;}
+.cstat .cv{font-size:22px;color:#fff;margin-top:3px;}
+
+/* mission command table */
+.cmdtable{width:100%;border-collapse:collapse;font-size:11px;}
+.cmdtable th{background:#0a1018;color:var(--dim);padding:5px 4px;border:1px solid #1a2233;text-align:left;font-size:10px;}
+.cmdtable td{padding:4px;border:1px solid #1a2233;vertical-align:top;}
+.cmdtable input,.cmdtable select{background:#0d1420;color:#fff;border:1px solid #2a3a4a;padding:3px 4px;font-family:inherit;font-size:11px;width:100%;}
+.cmdtable .del{background:var(--bad);border:none;color:#fff;cursor:pointer;padding:2px 6px;font-family:inherit;}
+
+/* setup drone selector */
+.makebadge{display:inline-block;padding:2px 8px;background:#0a1a2a;border:1px solid var(--border);border-radius:10px;font-size:11px;margin-right:6px;}
+
+/* terminal */
+.termbar{flex-shrink:0;border-top:1px solid var(--border);}
+.termhead{padding:5px 12px;font-size:11px;color:var(--dim);cursor:pointer;display:flex;justify-content:space-between;}
+.terminal{background:#000;color:var(--border);font-size:11px;line-height:1.35;padding:0 12px;overflow-y:auto;height:0;transition:height .12s;}
+.terminal.open{height:120px;padding:7px 12px;}
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div class="brand">RANCHDRONE GCS</div>
+  <div class="tabs">
+    <button class="tab active" data-tab="setup">Setup</button>
+    <button class="tab" data-tab="weather">Weather</button>
+    <button class="tab" data-tab="plan">Plan &amp; Fly</button>
+    <button class="tab" data-tab="commands">Mission Cmds</button>
+    <button class="tab" data-tab="upload">Compile &amp; Upload</button>
+    <button class="tab" data-tab="cockpit">Cockpit</button>
+  </div>
+  <span class="savechip" id="saveChip">—</span>
+  <span class="pill dead" id="relayPill">relay?</span>
+</div>
+
+<!-- CONTINUE BANNER (shown when saved session detected) -->
+<div class="continue-banner hidden" id="continueBanner">
+  ✓ Last session restored: <b id="continueLabel"></b>
+  <button onclick="clearSession()">Start Fresh</button>
+</div>
+
+<!-- ========== TAB: SETUP ========== -->
+<div class="tabpanel active" id="tab-setup">
+  <div class="stack">
+    <div class="card">
+      <h4>Drone Make &amp; Model</h4>
+      <div class="field">
+        <label>Make / autopilot board</label>
+        <select id="makeSelect" onchange="onMakeChange()">
+          <option value="Holybro">Holybro</option>
+          <option value="CubePilot">CubePilot</option>
+          <option value="mRo">mRobotics</option>
+          <option value="Emlid">Emlid</option>
+          <option value="custom">Custom (enter below)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Model / airframe</label>
+        <select id="modelSelect" onchange="onModelChange()"></select>
+      </div>
+      <div id="customFields" class="hidden">
+        <div class="row2">
+          <div class="field"><label>Custom make</label><input type="text" id="customMake" placeholder="e.g. MyDronesCo" oninput="saveSession()"></div>
+          <div class="field"><label>Custom model</label><input type="text" id="customModel" placeholder="e.g. AgroPilot v2" oninput="saveSession()"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>FRAME_CLASS (ArduCopter)</label><input type="number" id="frameClass" value="1" min="1" max="20" oninput="saveSession()"></div>
+          <div class="field"><label>FRAME_TYPE</label><input type="number" id="frameType" value="1" min="0" max="20" oninput="saveSession()"></div>
+        </div>
+        <div class="field"><label>ArduPilot frame class reference: 1=Quad 2=Hexa 3=Octa 5=Y6 6=Hexa 7=Y 8=Octa-Quad 10=TriCopter 12=Coax 13=Bicopter</label></div>
+      </div>
+      <div class="field">
+        <label>MAVLink connection string</label>
+        <input type="text" id="connString" placeholder="udp:127.0.0.1:14550  or  /dev/ttyUSB0,57600" oninput="saveSession()">
+      </div>
+      <button class="btn" onclick="applySetup()">Apply &amp; Save Setup</button>
+      <div class="statusline" id="setupStatus"></div>
+      <div class="altbox">
+        <b>Connection string formats</b>
+        <ol>
+          <li>SITL simulator: <code>udp:127.0.0.1:14550</code></li>
+          <li>USB telemetry radio (Linux): <code>/dev/ttyUSB0,57600</code></li>
+          <li>USB telemetry radio (Windows): <code>com3,57600</code></li>
+          <li>Ethernet companion computer: <code>tcp:192.168.1.10:5760</code></li>
+        </ol>
+        Set this in the relay server start command: <code>python3 relay/ranch_server.py --connection &lt;string&gt;</code>
+      </div>
+    </div>
+    <div class="card">
+      <h4>Relay Server</h4>
+      <p style="color:var(--dim);font-size:12px;margin:0 0 8px;">The relay server must be running before Upload or Cockpit will work. Weather and airspace overlays also go through it.</p>
+      <div class="altbox">
+        <b>Start the relay server (run once per session)</b>
+        <ol>
+          <li>Open a terminal in the <code>ranchdrone-kit</code> folder.</li>
+          <li>Run: <code>python3 relay/ranch_server.py --connection udp:127.0.0.1:14550</code></li>
+          <li>Open this page at <code>http://localhost:8765/</code> — not by double-clicking the file.</li>
+          <li>The green "relay ok" badge in the top bar confirms it is running.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== TAB: WEATHER ========== -->
+<div class="tabpanel" id="tab-weather">
+  <div class="mapwrap">
+    <div class="leaflet-map" id="wxmap"></div>
+    <div class="fpanel">
+      <h4>Weather &amp; Wind</h4>
+      <label>NWS station ID (auto-detected or override)</label>
+      <input type="text" id="nwsStation" placeholder="e.g. KICT" oninput="saveSession()">
+      <button onclick="fetchWeather()">Refresh Weather</button>
+      <label>Wind no-go threshold (m/s)</label>
+      <input type="number" id="windThresh" value="9" min="1" max="30" oninput="saveSession()">
+      <div id="windGo" class="wind-go">—</div>
+      <div class="wxgrid" id="wxGrid"></div>
+      <div style="margin-top:8px;font-size:10px;color:var(--dim);">
+        Radar: Weather data by <a href="https://rainviewer.com" style="color:var(--border);">RainViewer</a><br>
+        Wind/obs: <a href="https://weather.gov" style="color:var(--border);">NWS api.weather.gov</a> (free, no key)
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== TAB: PLAN & FLY ========== -->
+<div class="tabpanel" id="tab-plan">
+  <div class="mapwrap">
+    <div class="leaflet-map" id="planmap"></div>
+    <div class="fpanel">
+      <h4>Planning</h4>
+      <label>Mode</label>
+      <select id="mode" onchange="onModeChange()">
+        <option value="manual">Manual waypoints</option>
+        <option value="coverage">Coverage — lawnmower</option>
+        <option value="hex">Hex scout grid</option>
+      </select>
+      <label>Altitude (m AGL)</label>
+      <input type="number" id="altitude" value="30" oninput="saveSession()">
+      <div id="coverageParams" class="hidden">
+        <label>Swath / spacing (m)</label>
+        <input type="number" id="swath" value="12" oninput="saveSession()">
+        <label>Heading (deg, 0 = E-W rows)</label>
+        <input type="number" id="heading" value="0" oninput="saveSession()">
+        <button onclick="generateCoverage()">Generate Path</button>
+      </div>
+      <button onclick="clearWaypoints()" class="bad">Clear All Points</button>
+      <div style="color:var(--dim);font-size:10px;margin:3px 0;">Points: <b id="wpCount" style="color:#fff">0</b></div>
+
+      <h4 style="margin-top:10px;">Map Overlays</h4>
+      <button class="tog" id="togNFZ" onclick="toggleNFZ()">No-Fly Zones (FAA)</button>
+      <button class="tog" id="togPwr" onclick="togglePower()">Power / Utility Lines</button>
+
+      <h4 style="margin-top:10px;">Simulate</h4>
+      <label>Cruise speed (m/s)</label>
+      <input type="number" id="simSpeed" value="8">
+      <label>Playback multiplier</label>
+      <input type="number" id="simTimeScale" value="10">
+      <button onclick="simulateFlight()" class="sim">Fly The Mission (Sim)</button>
+      <button onclick="cancelSim()" class="bad">Stop Sim</button>
+      <div id="simbox" class="simbox hidden"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== TAB: MISSION COMMANDS ========== -->
+<div class="tabpanel" id="tab-commands">
+  <div class="stack">
+    <div class="card">
+      <h4>Mission Command Table — ArduPilot style</h4>
+      <p style="color:var(--dim);font-size:11px;margin:0 0 8px;">
+        Each row is one MAVLink command sent to ArduPilot in order.
+        Add rows manually or click "Import from Map" to populate from your Plan &amp; Fly waypoints.
+        This table compiles into the mission that "Compile &amp; Upload" uses.
+      </p>
+      <div class="row2" style="margin-bottom:8px;">
+        <button class="btn" onclick="importFromMap()">Import from Map</button>
+        <button class="btn" onclick="addCmdRow(null)">+ Add Row</button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="cmdtable">
+          <thead><tr>
+            <th>#</th><th>Command</th>
+            <th>P1</th><th>P2</th><th>P3</th><th>P4</th>
+            <th>Lat</th><th>Lon</th><th>Alt (m)</th><th></th>
+          </tr></thead>
+          <tbody id="cmdBody"></tbody>
+        </table>
+      </div>
+      <div style="font-size:10px;color:var(--dim);margin-top:6px;">
+        P1–P4 meanings depend on the command — see <a href="https://ardupilot.org/copter/docs/mission-command-list.html" target="_blank" style="color:var(--border);">ArduPilot Mission Command List</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== TAB: COMPILE & UPLOAD ========== -->
+<div class="tabpanel" id="tab-upload">
+  <div class="stack">
+    <div class="card">
+      <h4>Mission</h4>
+      <div class="row2">
+        <div class="field"><label>Mission name</label><input type="text" id="missionName" value="north_pasture" oninput="saveSession()"></div>
+        <div class="field"><label>Source</label>
+          <select id="missionSource">
+            <option value="map">From Plan &amp; Fly map</option>
+            <option value="table">From Mission Commands table</option>
+          </select>
+        </div>
+      </div>
+      <div style="color:var(--dim);font-size:11px;">Map: <b id="mapWpCount" style="color:#fff">0</b> wps &nbsp;|&nbsp; Table: <b id="tableWpCount" style="color:#fff">0</b> rows</div>
+    </div>
+    <div class="card">
+      <h4>Download (no relay needed)</h4>
+      <button class="btn" onclick="compileCSV()">Download CSV</button>
+      <button class="btn" onclick="compilePlan()">Download .plan (QGroundControl / Mission Planner)</button>
+    </div>
+    <div class="card">
+      <h4>Save to Relay Disk</h4>
+      <button class="btn warn" onclick="saveToServer()">Save Mission Package (.csv + .plan)</button>
+      <div class="statusline" id="saveStatus"></div>
+      <div id="saveAlt"></div>
+    </div>
+    <div class="card">
+      <h4>Upload to Flight Controller</h4>
+      <p style="color:var(--dim);font-size:11px;margin:0 0 6px;">
+        Simulate the mission first in Plan &amp; Fly. Verify the path makes sense.
+        Then upload. The flight controller's own failsafes (RTL, geofence, battery) remain active.
+      </p>
+      <button class="btn" onclick="uploadToController()">Upload Mission via MAVLink (real)</button>
+      <div class="statusline" id="uploadStatus"></div>
+      <div id="uploadAlt"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== TAB: COCKPIT ========== -->
+<div class="tabpanel" id="tab-cockpit">
+  <div class="stack">
+    <div class="cockgrid">
+      <div class="cstat"><div class="cl">Pitch</div><div class="cv" id="tPitch">—</div></div>
+      <div class="cstat"><div class="cl">Roll</div><div class="cv" id="tRoll">—</div></div>
+      <div class="cstat"><div class="cl">Altitude</div><div class="cv" id="tAlt">—</div></div>
+      <div class="cstat"><div class="cl">Battery</div><div class="cv" id="tBatt">—</div></div>
+      <div class="cstat" style="grid-column:span 2;"><div class="cl">Position</div><div class="cv" id="tPos" style="font-size:14px;">—</div></div>
+      <div class="cstat"><div class="cl">Link age</div><div class="cv" id="tAge" style="font-size:16px;">—</div></div>
+    </div>
+    <div class="card">
+      <h4>Ground Wind (NWS nearest station)</h4>
+      <div id="cockpitWind" style="font-size:12px;color:var(--dim);">—</div>
+    </div>
+    <div class="card">
+      <button class="btn" onclick="togglePause()" id="pauseBtn">Pause Cockpit</button>
+      <div id="cockpitAlt"></div>
+    </div>
+  </div>
+</div>
+
+<!-- TERMINAL -->
+<div class="termbar">
+  <div class="termhead" onclick="toggleTerm()">
+    Log <span id="termToggle">▲ show</span>
+  </div>
+  <div class="terminal" id="term"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+/* ================================================================
+   RANCHDRONE GCS — full state, all tabs, localStorage persistence
+   ================================================================ */
+
+// ---- drone model data ----
+const MODELS = {
+  Holybro:[
+    {model:'Pixhawk 6C',fc:1,ft:1,conn:'udp:127.0.0.1:14550'},
+    {model:'Pixhawk 6X',fc:1,ft:1,conn:'udp:127.0.0.1:14550'},
+    {model:'X500 v2 Quad',fc:1,ft:1,conn:'udp:127.0.0.1:14550'},
+  ],
+  CubePilot:[
+    {model:'Cube Orange',fc:1,ft:1,conn:'udp:127.0.0.1:14550'},
+    {model:'Cube Orange+',fc:1,ft:1,conn:'udp:127.0.0.1:14550'},
+    {model:'Cube Purple',fc:1,ft:1,conn:'udp:127.0.0.1:14550'},
+  ],
+  mRo:[
+    {model:'Pixracer Pro',fc:1,ft:1,conn:'udp:127.0.0.1:14550'},
+    {model:'Control Zero H7',fc:1,ft:1,conn:'udp:127.0.0.1:14550'},
+  ],
+  Emlid:[
+    {model:'Reach RS+ companion',fc:1,ft:1,conn:'tcp:192.168.1.10:5760'},
+  ],
+  custom:[
+    {model:'(enter below)',fc:1,ft:1,conn:''},
+  ],
+};
+
+// ---- MAVLink commands ----
+const MAV_CMDS = [
+  {cmd:'NAV_TAKEOFF',id:22,p:['Pitch°','','','Yaw','Lat','Lon','Alt']},
+  {cmd:'NAV_WAYPOINT',id:16,p:['Hold s','AccR m','PassR m','Yaw','Lat','Lon','Alt']},
+  {cmd:'NAV_LOITER_TIME',id:19,p:['Time s','','Radius m','Yaw','Lat','Lon','Alt']},
+  {cmd:'NAV_LOITER_TURNS',id:18,p:['Turns','','Radius m','Dir','Lat','Lon','Alt']},
+  {cmd:'DO_CHANGE_SPEED',id:178,p:['Type','Speed m/s','Throt%','','','','']},
+  {cmd:'DO_SET_ROI',id:201,p:['Mode','WP#','','','Lat','Lon','Alt']},
+  {cmd:'NAV_LAND',id:21,p:['AbortAlt','','','Yaw','Lat','Lon','Alt']},
+  {cmd:'NAV_RETURN_TO_LAUNCH',id:20,p:['','','','','','','']},
+];
+
+const SESSION_KEY = 'rdk_v2';
+const RELAY = '';
+
+// ---- state ----
+let points=[], mission=[], cmdRows=[];
+let markers=[], planPL, wxPL, nfzLayer=null, pwrLayer=null;
+let nfzOn=false, pwrOn=false;
+let simId=null, simMarker=null;
+let cockpitPaused=false;
+let currentSetup={make:'Holybro',model:'Pixhawk 6C',fc:1,ft:1,conn:'udp:127.0.0.1:14550'};
+let termOpen=false;
+let saveDebounce=null;
+let wxState=null;
+
+// ---- localStorage ----
+function saveSession(){
+  clearTimeout(saveDebounce);
+  saveDebounce = setTimeout(()=>{
+    try{
+      const s={
+        setup:currentSetup,
+        points, mission, cmdRows,
+        mode:$('mode').value,
+        altitude:$('altitude').value,
+        swath:$('swath').value,
+        heading:$('heading').value,
+        name:$('missionName').value,
+        nwsStation:$('nwsStation').value,
+        windThresh:$('windThresh').value,
+        conn:$('connString').value,
+      };
+      localStorage.setItem(SESSION_KEY, JSON.stringify(s));
+      const chip = $('saveChip');
+      chip.textContent='✓ Session saved';
+      chip.className='savechip ok';
+      setTimeout(()=>{ chip.textContent='Auto-save on'; chip.className='savechip'; },2000);
+    }catch(e){}
+  },800);
+}
+function loadSession(){
+  try{ return JSON.parse(localStorage.getItem(SESSION_KEY)); }catch(e){ return null; }
+}
+function clearSession(){
+  localStorage.removeItem(SESSION_KEY);
+  location.reload();
+}
+function applySession(s){
+  if(!s) return;
+  if(s.setup) currentSetup=s.setup;
+  if(s.points) points=s.points;
+  if(s.mission) mission=s.mission;
+  if(s.cmdRows) cmdRows=s.cmdRows;
+  if(s.mode) $('mode').value=s.mode;
+  if(s.altitude) $('altitude').value=s.altitude;
+  if(s.swath) $('swath').value=s.swath;
+  if(s.heading) $('heading').value=s.heading;
+  if(s.name) $('missionName').value=s.name;
+  if(s.nwsStation) $('nwsStation').value=s.nwsStation;
+  if(s.windThresh) $('windThresh').value=s.windThresh;
+  if(s.conn) $('connString').value=s.conn;
+  onModeChange();
+  // populate setup tab fields
+  const make = s.setup&&s.setup.make || 'Holybro';
+  $('makeSelect').value = MODELS[make]?make:'custom';
+  populateModels();
+  if(s.setup&&s.setup.model) $('modelSelect').value=s.setup.model;
+  if(s.setup&&s.setup.make==='custom'){
+    $('customMake').value=s.setup.customMake||'';
+    $('customModel').value=s.setup.customModel||'';
+    $('frameClass').value=s.setup.fc||1;
+    $('frameType').value=s.setup.ft||1;
+    $('customFields').classList.remove('hidden');
+  }
+  renderCmdTable();
+  const banner=$('continueBanner'), label=$('continueLabel');
+  const name=s.name||'untitled';
+  const n=(s.points||[]).length+(s.mission||[]).length;
+  label.textContent=`"${name}", ${n} waypoints`;
+  banner.classList.remove('hidden');
+}
+
+// ---- utils ----
+function $(id){ return document.getElementById(id); }
+function esc(s){ const d=document.createElement('div');d.textContent=String(s||'');return d.innerHTML; }
+function logTerm(msg,cls){
+  const t=$('term');
+  const c=cls==='bad'?'#ff4444':cls==='warn'?'#ffaa00':'#00ffcc';
+  t.innerHTML+=`<span style="color:${c}">&gt; ${esc(msg)}</span><br>`;
+  t.scrollTop=t.scrollHeight;
+  if(!termOpen) toggleTerm();
+}
+function toggleTerm(){
+  termOpen=!termOpen;
+  $('term').classList.toggle('open',termOpen);
+  $('termToggle').textContent=termOpen?'▼ hide':'▲ show';
+}
+function showAlt(id,title,steps){
+  $(id).innerHTML=`<div class="altbox"><b>${esc(title)}</b><ol>${steps.map(s=>`<li>${s}</li>`).join('')}</ol></div>`;
+}
+function clearAlt(id){ $(id).innerHTML=''; }
+const RELAY_STEPS=[
+  'Open a terminal in <code>ranchdrone-kit/</code>',
+  'Run: <code>python3 relay/ranch_server.py --connection udp:127.0.0.1:14550</code>',
+  'Open this page at <code>http://localhost:8765/</code> — not by double-clicking the file.',
+  'The green badge at top-right confirms connection.',
+];
+
+// ---- tabs ----
+document.querySelectorAll('.tab').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.tabpanel').forEach(p=>p.classList.remove('active'));
+    const tid='tab-'+btn.dataset.tab;
+    $(tid).classList.add('active');
+    if(btn.dataset.tab==='plan') setTimeout(()=>planMap.invalidateSize(),60);
+    if(btn.dataset.tab==='weather') setTimeout(()=>wxMap.invalidateSize(),60);
+    if(btn.dataset.tab==='upload'){
+      $('mapWpCount').textContent=currentMission().length;
+      $('tableWpCount').textContent=cmdRows.length;
+    }
+  });
+});
+
+// ---- setup tab ----
+function populateModels(){
+  const make=$('makeSelect').value;
+  const sel=$('modelSelect');
+  sel.innerHTML='';
+  (MODELS[make]||[]).forEach(m=>{
+    const o=document.createElement('option');
+    o.value=m.model; o.textContent=m.model; sel.appendChild(o);
+  });
+  $('customFields').classList.toggle('hidden', make!=='custom');
+  const first=(MODELS[make]||[])[0];
+  if(first) $('connString').value=first.conn;
+  saveSession();
+}
+function onMakeChange(){ populateModels(); }
+function onModelChange(){
+  const make=$('makeSelect').value, model=$('modelSelect').value;
+  const found=(MODELS[make]||[]).find(m=>m.model===model);
+  if(found){ $('connString').value=found.conn; }
+  saveSession();
+}
+function applySetup(){
+  const make=$('makeSelect').value;
+  currentSetup={
+    make:make==='custom'?$('customMake').value||'Custom':make,
+    model:make==='custom'?$('customModel').value||'Custom':$('modelSelect').value,
+    customMake:$('customMake').value,
+    customModel:$('customModel').value,
+    fc:+(make==='custom'?$('frameClass').value:((MODELS[make]||[])[0]||{fc:1}).fc),
+    ft:+(make==='custom'?$('frameType').value:((MODELS[make]||[])[0]||{ft:1}).ft),
+    conn:$('connString').value.trim(),
+  };
+  saveSession();
+  $('setupStatus').textContent=`Saved: ${currentSetup.make} ${currentSetup.model} | FRAME_CLASS=${currentSetup.fc} FRAME_TYPE=${currentSetup.ft}`;
+  $('setupStatus').className='statusline ok';
+  logTerm(`Setup saved: ${currentSetup.make} ${currentSetup.model}`);
+}
+
+// ---- map helpers ----
+function toXY(p,lat0,lon0,cosLat0){ return{x:(p.lng-lon0)*cosLat0*111320,y:(p.lat-lat0)*110540}; }
+function toLL(x,y,lat0,lon0,cosLat0){ return{lat:lat0+y/110540,lng:lon0+x/(cosLat0*111320)}; }
+function generateLawnmower(boundary,swathM,headDeg,altM){
+  const lat0=boundary[0].lat,lon0=boundary[0].lng,cosLat0=Math.cos(lat0*Math.PI/180);
+  const poly=boundary.map(p=>toXY(p,lat0,lon0,cosLat0));
+  const rad=-headDeg*Math.PI/180,cosR=Math.cos(rad),sinR=Math.sin(rad);
+  const rot=poly.map(p=>({x:p.x*cosR-p.y*sinR,y:p.x*sinR+p.y*cosR}));
+  let minY=Infinity,maxY=-Infinity;
+  rot.forEach(p=>{minY=Math.min(minY,p.y);maxY=Math.max(maxY,p.y);});
+  function scan(y){
+    const xs=[],n=rot.length;
+    for(let i=0;i<n;i++){const a=rot[i],b=rot[(i+1)%n];
+      if((a.y<=y&&b.y>y)||(b.y<=y&&a.y>y))xs.push(a.x+(y-a.y)/(b.y-a.y)*(b.x-a.x));}
+    return xs.sort((a,b)=>a-b);
+  }
+  function unrot(rx,ry){const cR=Math.cos(-rad),sR=Math.sin(-rad),x=rx*cR-ry*sR,y=rx*sR+ry*cR,ll=toLL(x,y,lat0,lon0,cosLat0);return[ll.lat,ll.lng,altM];}
+  const wps=[];let ltr=true,y=minY+swathM/2;
+  while(y<=maxY){const xs=scan(y);for(let i=0;i+1<xs.length;i+=2){const[f,s]=ltr?[xs[i],xs[i+1]]:[xs[i+1],xs[i]];wps.push(unrot(f,y));wps.push(unrot(s,y));}ltr=!ltr;y+=swathM;}
+  return wps;
+}
+function pointInPoly(poly,x,y){
+  let in_=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const a=poly[i],b=poly[j];if(((a.y>y)!==(b.y>y))&&(x<(b.x-a.x)*(y-a.y)/(b.y-a.y)+a.x))in_=!in_;}return in_;
+}
+function generateHex(boundary,spacingM,altM){
+  const lat0=boundary[0].lat,lon0=boundary[0].lng,cosLat0=Math.cos(lat0*Math.PI/180);
+  const poly=boundary.map(p=>toXY(p,lat0,lon0,cosLat0));
+  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+  poly.forEach(p=>{minX=Math.min(minX,p.x);maxX=Math.max(maxX,p.x);minY=Math.min(minY,p.y);maxY=Math.max(maxY,p.y);});
+  const rowSp=spacingM*Math.sqrt(3)/2,pts=[];let row=0;
+  for(let y=minY;y<=maxY;y+=rowSp,row++){
+    const xOff=(row%2===0)?0:spacingM/2;
+    for(let x=minX+xOff;x<=maxX;x+=spacingM){if(pointInPoly(poly,x,y)){const ll=toLL(x,y,lat0,lon0,cosLat0);pts.push([ll.lat,ll.lng,altM]);}}
+  }
+  return pts;
+}
+
+// ---- plan map ----
+const planMap=L.map('planmap').setView([38.0011,-96.9978],15);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{attribution:'&copy; OpenStreetMap &copy; CARTO',maxZoom:19}).addTo(planMap);
+planPL=L.polyline([],{color:'#00ffcc',weight:2.5}).addTo(planMap);
+
+planMap.on('click',e=>{
+  const lat=+e.latlng.lat.toFixed(7),lng=+e.latlng.lng.toFixed(7);
+  points.push({lat,lng});
+  const m=L.circleMarker([lat,lng],{radius:5,color:'#00ffcc',fillColor:'#00ffcc',fillOpacity:1}).addTo(planMap);
+  markers.push(m);
+  planPL.setLatLngs(points.map(p=>[p.lat,p.lng]));
+  $('wpCount').textContent=points.length;
+  logTerm(`${$('mode').value==='manual'?'Waypoint':'Boundary vertex'}: ${lat}, ${lng}`);
+  saveSession();
+});
+
+function onModeChange(){
+  const cov=$('mode').value!=='manual';
+  $('coverageParams').classList.toggle('hidden',!cov);
+  saveSession();
+}
+function clearWaypoints(){
+  cancelSim();
+  points=[];mission=[];
+  markers.forEach(m=>planMap.removeLayer(m));markers=[];
+  planPL.setLatLngs([]);
+  $('wpCount').textContent=0;
+  logTerm('Cleared.');
+  saveSession();
+}
+function generateCoverage(){
+  if(points.length<3){alert('Click at least 3 boundary points first.');return;}
+  const alt=+$('altitude').value,swath=+$('swath').value,head=+$('heading').value;
+  mission=$('mode').value==='coverage'?generateLawnmower(points,swath,head,alt):generateHex(points,swath,alt);
+  markers.forEach(m=>planMap.removeLayer(m));
+  markers=mission.map(wp=>L.circleMarker([wp[0],wp[1]],{radius:4,color:'#ffaa00',fillColor:'#ffaa00',fillOpacity:1}).addTo(planMap));
+  planPL.setLatLngs(mission.map(wp=>[wp[0],wp[1]]));
+  $('wpCount').textContent=mission.length;
+  logTerm(`Generated ${mission.length} waypoints.`);
+  saveSession();
+}
+function currentMission(){
+  if($('missionSource')&&$('missionSource').value==='table') return cmdRowsToMission();
+  if(mission.length) return mission;
+  const alt=+$('altitude').value;
+  return points.map(p=>[p.lat,p.lng,alt]);
+}
+
+// ---- overlays: no-fly zones ----
+async function toggleNFZ(){
+  nfzOn=!nfzOn;
+  $('togNFZ').classList.toggle('on',nfzOn);
+  if(!nfzOn){ if(nfzLayer){planMap.removeLayer(nfzLayer);nfzLayer=null;} return; }
+  logTerm('Loading FAA no-fly zone data...');
+  const b=planMap.getBounds();
+  const bbox=[b.getWest(),b.getSouth(),b.getEast(),b.getNorth()].map(v=>v.toFixed(5));
+  try{
+    const res=await fetch(`${RELAY}/airspace?bbox=${bbox.join(',')}`);
+    const data=await res.json();
+    const layers=[];
+    (data.zones||[]).forEach(z=>{
+      if(!z.polygon||!z.polygon.length) return;
+      const lls=z.polygon.map(c=>[c[1],c[0]]);
+      const color=z.restricted?'#ff3a3a':'#ffaa00';
+      layers.push(L.polygon(lls,{color,fillColor:color,fillOpacity:.18,weight:1.5}).bindPopup(`<b>${esc(z.name)}</b><br>${z.restricted?'NO-FLY':'Controlled'}`));
+    });
+    if(layers.length===0){ logTerm('No airspace zones found in this area (or relay offline)','warn'); nfzOn=false; $('togNFZ').classList.remove('on'); return; }
+    nfzLayer=L.layerGroup(layers).addTo(planMap);
+    logTerm(`Loaded ${layers.length} airspace zones.`);
+  }catch(e){
+    logTerm('Could not load airspace — is the relay running?','bad');
+    nfzOn=false; $('togNFZ').classList.remove('on');
+  }
+}
+
+// ---- overlays: power lines ----
+async function togglePower(){
+  pwrOn=!pwrOn;
+  $('togPwr').classList.toggle('on',pwrOn);
+  if(!pwrOn){ if(pwrLayer){planMap.removeLayer(pwrLayer);pwrLayer=null;} return; }
+  logTerm('Loading utility / power line data (OpenStreetMap Overpass)...');
+  const b=planMap.getBounds();
+  const bbox=[b.getWest(),b.getSouth(),b.getEast(),b.getNorth()].map(v=>v.toFixed(5));
+  try{
+    const res=await fetch(`${RELAY}/powerlines?bbox=${bbox.join(',')}`);
+    const data=await res.json();
+    const lines=(data.lines||[]).map(pts=>L.polyline(pts,{color:'#ff9d3d',weight:2.5,opacity:.85}).bindPopup('Power / utility line (OSM)'));
+    if(!lines.length){ logTerm('No power lines found in this area.','warn'); pwrOn=false; $('togPwr').classList.remove('on'); return; }
+    pwrLayer=L.layerGroup(lines).addTo(planMap);
+    logTerm(`Loaded ${lines.length} power line segments.`);
+  }catch(e){
+    logTerm('Could not load power lines — is the relay running?','bad');
+    pwrOn=false; $('togPwr').classList.remove('on');
+  }
+}
+
+// ---- restore map waypoints from session ----
+function restoreMapPoints(){
+  points.forEach(p=>{
+    const m=L.circleMarker([p.lat,p.lng],{radius:5,color:'#00ffcc',fillColor:'#00ffcc',fillOpacity:1}).addTo(planMap);
+    markers.push(m);
+  });
+  if(mission.length){
+    markers.forEach(m=>planMap.removeLayer(m));markers=[];
+    markers=mission.map(wp=>L.circleMarker([wp[0],wp[1]],{radius:4,color:'#ffaa00',fillColor:'#ffaa00',fillOpacity:1}).addTo(planMap));
+    planPL.setLatLngs(mission.map(wp=>[wp[0],wp[1]]));
+  } else {
+    planPL.setLatLngs(points.map(p=>[p.lat,p.lng]));
+  }
+  $('wpCount').textContent=(mission.length||points.length);
+}
+
+// ---- flight simulation ----
+function cancelSim(){
+  if(simId) cancelAnimationFrame(simId);simId=null;
+  if(simMarker){planMap.removeLayer(simMarker);simMarker=null;}
+  $('simbox').classList.add('hidden');
+}
+function simulateFlight(){
+  const m=currentMission();
+  if(m.length<2){alert('Need at least 2 waypoints.');return;}
+  cancelSim();
+  const speed=Math.max(0.5,+$('simSpeed').value||8),ts=Math.max(1,+$('simTimeScale').value||10);
+  const lls=m.map(wp=>L.latLng(wp[0],wp[1]));
+  const seg=[];let tot=0;
+  for(let i=0;i<lls.length-1;i++){const d=lls[i].distanceTo(lls[i+1]);seg.push(d);tot+=d;}
+  const dur=tot/speed;
+  logTerm(`Simulating: ${tot.toFixed(0)}m / ${speed}m/s = ${Math.round(dur)}s real flight time.`);
+  const icon=L.divIcon({className:'',html:'<div style="color:#ff9d3d;font-size:18px;transform:translate(-50%,-50%);">▲</div>',iconSize:[0,0]});
+  simMarker=L.marker(lls[0],{icon}).addTo(planMap);
+  const sb=$('simbox');sb.classList.remove('hidden');
+  const t0=performance.now();
+  function step(now){
+    const elapsed=(now-t0)/1000*ts;
+    if(elapsed>=dur){
+      simMarker.setLatLng(lls[lls.length-1]);
+      sb.innerHTML='<b>SIMULATION COMPLETE</b> — Review path, then Compile &amp; Upload.';
+      logTerm('Simulation complete.');return;
+    }
+    let dist=elapsed*speed,si=0,di=dist;
+    while(si<seg.length-1&&di>seg[si]){di-=seg[si];si++;}
+    const a=lls[si],b=lls[Math.min(si+1,lls.length-1)],f=seg[si]?Math.min(1,di/seg[si]):0;
+    simMarker.setLatLng([a.lat+(b.lat-a.lat)*f,a.lng+(b.lng-a.lng)*f]);
+    sb.innerHTML=`<b>SIM (not live)</b> WP${si+1}/${lls.length} · ${dist.toFixed(0)}/${tot.toFixed(0)}m · ETA ${Math.round((dur-elapsed)/ts)}s`;
+    simId=requestAnimationFrame(step);
+  }
+  simId=requestAnimationFrame(step);
+}
+
+// ---- weather map ----
+const wxMap=L.map('wxmap').setView([38.0011,-96.9978],8);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{attribution:'&copy; OpenStreetMap &copy; CARTO',maxZoom:14}).addTo(wxMap);
+let radarLayer=null;
+async function loadRadar(){
+  try{
+    const res=await fetch('https://api.rainviewer.com/public/weather-maps.json');
+    const data=await res.json();
+    const latest=data.radar.past[data.radar.past.length-1];
+    const url=`${data.host}${latest.path}/256/{z}/{x}/{y}/4/1_1.png`;
+    if(radarLayer) wxMap.removeLayer(radarLayer);
+    radarLayer=L.tileLayer(url,{opacity:.6,attribution:'Weather by <a href="https://rainviewer.com">RainViewer</a>'}).addTo(wxMap);
+    logTerm('Radar tiles loaded (RainViewer).');
+  }catch(e){ logTerm('RainViewer radar unavailable — check internet.','warn'); }
+}
+async function fetchWeather(){
+  const center=wxMap.getCenter();
+  const stationOverride=$('nwsStation').value.trim();
+  logTerm('Fetching NWS weather data...');
+  try{
+    const url=stationOverride
+      ? `${RELAY}/weather?station=${encodeURIComponent(stationOverride)}`
+      : `${RELAY}/weather?lat=${center.lat.toFixed(4)}&lon=${center.lng.toFixed(4)}`;
+    const res=await fetch(url);
+    const data=await res.json();
+    if(data.error){ logTerm('Weather: '+data.error,'warn'); return; }
+    wxState=data;
+    renderWeather(data);
+  }catch(e){
+    logTerm('Weather relay unavailable. Check relay server.','bad');
+    $('windGo').textContent='RELAY OFFLINE';
+    $('windGo').className='wind-go nogo';
+  }
+}
+function renderWeather(d){
+  const thresh=+$('windThresh').value||9;
+  const wsMps=d.windSpeed!=null?+d.windSpeed:null;
+  const wsKnots=wsMps!=null?(wsMps*1.944).toFixed(1):null;
+  const goEl=$('windGo');
+  if(wsMps!=null){
+    const ok=wsMps<=thresh;
+    goEl.textContent=ok?`GO — Wind ${wsMps.toFixed(1)} m/s (${wsKnots} kt) ≤ ${thresh} m/s`:`NO-GO — Wind ${wsMps.toFixed(1)} m/s (${wsKnots} kt) > ${thresh} m/s`;
+    goEl.className='wind-go '+(ok?'go':'nogo');
+    $('cockpitWind').textContent=`${wsMps.toFixed(1)} m/s / ${wsKnots} kt — ${d.windDirection!=null?d.windDirection+'°':'dir?'} — station: ${d.station||'?'}`;
+  } else {
+    goEl.textContent='Wind data unavailable';goEl.className='wind-go';
+  }
+  if(d.station) $('nwsStation').value=d.station;
+  const grid=$('wxGrid');
+  function cell(label,val){return`<div class="wxcard"><div class="lbl">${label}</div><div class="val">${val}</div></div>`;}
+  grid.innerHTML=[
+    cell('Wind',wsMps!=null?`${wsMps.toFixed(1)} m/s`:'—'),
+    cell('Dir',d.windDirection!=null?`${d.windDirection}°`:'—'),
+    cell('Temp',d.temp!=null?`${d.temp.toFixed(1)} °C`:'—'),
+    cell('Humidity',d.humidity!=null?`${d.humidity.toFixed(0)} %`:'—'),
+    cell('Baro',d.pressure!=null?`${(d.pressure/100).toFixed(0)} hPa`:'—'),
+    cell('Vis',d.visibility!=null?`${(d.visibility/1000).toFixed(1)} km`:'—'),
+  ].join('');
+}
+// auto-refresh radar every 5 min
+loadRadar();
+setInterval(loadRadar, 300000);
+
+// ---- mission commands table ----
+function addCmdRow(defaults){
+  const d=defaults||{cmd:'NAV_WAYPOINT',p1:'',p2:'',p3:'',p4:'',lat:'',lon:'',alt:'30'};
+  cmdRows.push(d);
+  renderCmdTable();
+  saveSession();
+}
+function renderCmdTable(){
+  const tbody=$('cmdBody');
+  tbody.innerHTML=cmdRows.map((r,i)=>{
+    const sel=MAV_CMDS.map(c=>`<option value="${c.cmd}"${r.cmd===c.cmd?' selected':''}>${c.cmd}</option>`).join('');
+    return`<tr>
+      <td style="color:var(--dim)">${i+1}</td>
+      <td><select onchange="cmdChange(${i},'cmd',this.value)">${sel}</select></td>
+      ${['p1','p2','p3','p4','lat','lon','alt'].map(k=>`<td><input type="text" value="${esc(r[k]||'')}" onchange="cmdChange(${i},'${k}',this.value)"></td>`).join('')}
+      <td><button class="del" onclick="delCmdRow(${i})">✕</button></td>
+    </tr>`;
+  }).join('');
+}
+function cmdChange(i,key,val){ cmdRows[i][key]=val; saveSession(); }
+function delCmdRow(i){ cmdRows.splice(i,1); renderCmdTable(); saveSession(); }
+function importFromMap(){
+  const m=currentMission();
+  if(!m.length){alert('No map waypoints yet — plan first.');return;}
+  cmdRows=[];
+  m.forEach((wp,i)=>{
+    cmdRows.push({cmd:i===0?'NAV_TAKEOFF':'NAV_WAYPOINT',p1:'',p2:'',p3:'',p4:'',lat:wp[0].toFixed(7),lon:wp[1].toFixed(7),alt:wp[2]});
+  });
+  cmdRows.push({cmd:'NAV_RETURN_TO_LAUNCH',p1:'',p2:'',p3:'',p4:'',lat:'',lon:'',alt:''});
+  renderCmdTable();
+  saveSession();
+  logTerm(`Imported ${m.length} waypoints to command table + RTL.`);
+}
+function cmdRowsToMission(){
+  return cmdRows.filter(r=>r.lat&&r.lon).map(r=>[+r.lat,+r.lon,+(r.alt||30)]);
+}
+
+// ---- compile / upload ----
+function toCSV(m){return'lat,lon,alt_m\n'+m.map(wp=>`${wp[0]},${wp[1]},${wp[2]}`).join('\n')+'\n';}
+function toPlan(m,name){
+  const items=[];let id=1;
+  m.forEach((wp,i)=>{
+    items.push({AMSLAltAboveTerrain:null,Altitude:wp[2],AltitudeMode:1,autoContinue:true,
+      command:i===0?22:16,doJumpId:id++,frame:3,
+      params:i===0?[15,0,0,null,wp[0],wp[1],wp[2]]:[0,0,0,null,wp[0],wp[1],wp[2]],type:'SimpleItem'});
+  });
+  items.push({AMSLAltAboveTerrain:null,Altitude:0,AltitudeMode:1,autoContinue:true,command:20,doJumpId:id++,frame:3,params:[0,0,0,0,0,0,0],type:'SimpleItem'});
+  return{fileType:'Plan',geoFence:{circles:[],polygons:[],version:2},groundStation:'RanchDrone-GCS',
+    mission:{cruiseSpeed:10,firmwareType:3,globalPlanAltitudeMode:1,hoverSpeed:5,
+      items,plannedHomePosition:[m[0][0],m[0][1],m[0][2]],vehicleType:2,version:2},
+    rallyPoints:{points:[],version:2},version:1};
+}
+function download(name,text){
+  const a=document.createElement('a');
+  a.href='data:text/plain;charset=utf-8,'+encodeURIComponent(text);
+  a.download=name;a.style.display='none';document.body.appendChild(a);a.click();document.body.removeChild(a);
+}
+function compileCSV(){
+  const m=currentMission();if(!m.length){alert('No waypoints.');return;}
+  const name=$('missionName').value||'mission';
+  download(name+'.csv',toCSV(m));
+  logTerm(`Downloaded ${name}.csv (${m.length} waypoints).`);
+}
+function compilePlan(){
+  const m=currentMission();if(!m.length){alert('No waypoints.');return;}
+  const name=$('missionName').value||'mission';
+  download(name+'.plan',JSON.stringify(toPlan(m,name),null,2));
+  logTerm(`Downloaded ${name}.plan (${m.length} wps + takeoff + RTL).`);
+}
+async function saveToServer(){
+  const m=currentMission();if(!m.length){alert('No waypoints.');return;}
+  const name=$('missionName').value||'mission';
+  clearAlt('saveAlt');$('saveStatus').textContent='Saving...';$('saveStatus').className='statusline';
+  try{
+    const res=await fetch(RELAY+'/save',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name,csv:toCSV(m),plan:toPlan(m,name)})});
+    const data=await res.json();
+    if(data.success){$('saveStatus').textContent=`Saved: ${data.saved.join(', ')} → ${data.folder}`;$('saveStatus').className='statusline ok';logTerm('Mission package saved to relay disk.');}
+    else{$('saveStatus').textContent='Save failed.';$('saveStatus').className='statusline bad';showAlt('saveAlt','Save failed',[data.message||'Unknown error.']);}
+  }catch(e){
+    $('saveStatus').textContent='Relay not reachable.';$('saveStatus').className='statusline bad';
+    showAlt('saveAlt','Relay server not reachable',RELAY_STEPS.concat([`Saved files go in <code>missions/</code> as <code>.csv</code> and <code>.plan</code> files.`]));
+  }
+}
+async function uploadToController(){
+  const m=currentMission();if(!m.length){alert('No waypoints.');return;}
+  const alt=+$('altitude').value;
+  clearAlt('uploadAlt');$('uploadStatus').textContent='Uploading...';$('uploadStatus').className='statusline';
+  logTerm('Uploading mission via MAVLink (real — not simulated)...');
+  try{
+    const res=await fetch(RELAY+'/mission',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({waypoints:m,takeoff_alt:alt})});
+    const data=await res.json();
+    $('uploadStatus').textContent=data.message;$('uploadStatus').className='statusline '+(data.success?'ok':'bad');
+    if(!data.success) showAlt('uploadAlt','Upload did not succeed',[data.message,'Make sure <code>pip install pymavlink</code> has been run, and the relay was started with <code>--connection</code> pointing at your flight controller.']);
+    logTerm(data.message,data.success?undefined:'bad');
+  }catch(e){
+    $('uploadStatus').textContent='Relay not reachable.';$('uploadStatus').className='statusline bad';
+    showAlt('uploadAlt','Cannot reach relay server',RELAY_STEPS);
+  }
+}
+
+// ---- cockpit polling ----
+function togglePause(){cockpitPaused=!cockpitPaused;$('pauseBtn').textContent=cockpitPaused?'Resume Cockpit':'Pause Cockpit';}
+async function pollTelemetry(){
+  const pill=$('relayPill');
+  try{
+    const res=await fetch(RELAY+'/telemetry');
+    const t=await res.json();
+    pill.textContent=t.connected?'drone: live':'relay ok';
+    pill.className='pill '+(t.connected?'live':'dead');
+    clearAlt('cockpitAlt');
+    if(!t.connected){
+      showAlt('cockpitAlt','Relay running — no flight controller connected',[
+        'Restart relay with: <code>python3 relay/ranch_server.py --connection udp:127.0.0.1:14550</code> (or your USB radio).',
+        'For a first test with no hardware, run ArduPilot SITL and point <code>--connection</code> at <code>udp:127.0.0.1:14550</code>.',
+      ]);
+    }
+    if(!cockpitPaused){
+      $('tPitch').textContent=t.pitch.toFixed(2)+'°';
+      $('tRoll').textContent=t.roll.toFixed(2)+'°';
+      $('tAlt').textContent=t.altitude.toFixed(2)+' m';
+      $('tBatt').textContent=t.battery_pct.toFixed(1)+' %';
+      $('tPos').textContent=(t.lat||t.lon)?`${t.lat.toFixed(6)}, ${t.lon.toFixed(6)}`:'—';
+      $('tAge').textContent=t.last_update?(Date.now()/1000-t.last_update).toFixed(1)+'s ago':'—';
+    }
+  }catch(e){
+    pill.textContent='relay offline';pill.className='pill dead';
+    showAlt('cockpitAlt','Cannot reach relay server',RELAY_STEPS);
+  }
+}
+setInterval(pollTelemetry,500);
+pollTelemetry();
+
+// ---- init: populate setup dropdowns ----
+function init(){
+  const makeEl=$('makeSelect');
+  Object.keys(MODELS).forEach(k=>{
+    if(makeEl.querySelector(`option[value="${k}"]`)) return; // already in HTML
+  });
+  populateModels();
+
+  // restore session
+  const saved=loadSession();
+  if(saved){
+    applySession(saved);
+    restoreMapPoints();
+  }
+  renderCmdTable();
+  $('saveChip').textContent='Auto-save on';
+
+  logTerm('RanchDrone GCS loaded. Open http://localhost:8765/ via the relay server.');
+  logTerm('Session auto-saves every keystroke. Close and reopen — it continues where you left off.');
+}
+init();
+
+// Leaflet map needs a resize after the browser paints the layout
+setTimeout(()=>{planMap.invalidateSize();wxMap.invalidateSize();},200);
+</script>
+</body>
+</html>

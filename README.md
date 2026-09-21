@@ -132,3 +132,5 @@ RanchDrone GCS is a collaborative community project. Whether you are an agricult
 
 
 * **Safety First:** Always follow local aviation regulations (such as FAA Part 107 guidelines or international equivalents), maintain visual line of sight, and test all flight plans in simulation mode before running live flights near livestock or property.
+  
+* https://translate.google.com/
